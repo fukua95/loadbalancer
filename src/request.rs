@@ -12,6 +12,8 @@ pub enum Error {
     /// bytes that were successfully read before the client hung up
     IncompleteRequest(usize),
     /// Client sent an invalid HTTP request.
+    /// We don't use `httparse::Error` currently.
+    #[allow(dead_code)]
     MalformedRequest(httparse::Error),
     /// The Content-Length header is present, but does not contain a valid numeric value
     InvalidContentLength,

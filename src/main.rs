@@ -3,11 +3,7 @@ mod response;
 
 use clap::Parser;
 use rand::{Rng, SeedableRng};
-use std::{
-    net::{TcpListener, TcpStream},
-    sync::Arc,
-    thread,
-};
+use std::net::{TcpListener, TcpStream};
 
 #[derive(Parser, Debug)]
 #[command(about = "Command Options")]
@@ -30,10 +26,13 @@ struct CmdOptions {
 
 struct ProxyState {
     // How frequently we check whether upstream servers are alive
+    #[allow(dead_code)]
     active_health_check_interval: usize,
     // Where we should send requests when doing active health checks
+    #[allow(dead_code)]
     active_health_check_path: String,
     // Maximum number of requests an individual IP can make in a minute
+    #[allow(dead_code)]
     max_requests_per_minute: usize,
     // Addresses of servers that we are proxying to
     upstream_addresses: Vec<String>,
@@ -98,7 +97,7 @@ fn send_response(client_conn: &mut TcpStream, response: &http::Response<Vec<u8>>
     );
 
     if let Err(err) = response::write_to_stream(&response, client_conn) {
-        log::warn!("Failed to send response to clinet: {}", err);
+        log::warn!("Failed to send response to client: {}", err);
         return;
     }
 }

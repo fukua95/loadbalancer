@@ -8,8 +8,10 @@ const MAX_NUM_HEADERS: usize = 32;
 #[derive(Debug)]
 pub enum Error {
     /// Client hung up before sending a complete request
+    #[allow(dead_code)]
     IncompleteResponse(usize),
     /// Client sent an invalid HTTP request
+    #[allow(dead_code)]
     MalformedResponse(httparse::Error),
     /// The Content-Length header is present, but doesn't contain a valid numeric value
     InvalidContentLength,
@@ -18,6 +20,7 @@ pub enum Error {
     /// The request body is bigger than MAX_BODY_SIZE
     ResponseBodyTooLarge,
     /// Encountered an I/O error when reading/writing a TcpStream
+    #[allow(dead_code)]
     ConnectionError(std::io::Error),
 }
 
