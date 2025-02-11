@@ -3,7 +3,11 @@ mod response;
 
 use clap::Parser;
 use rand::{Rng, SeedableRng};
-use std::net::{TcpListener, TcpStream};
+use std::{
+    net::{TcpListener, TcpStream},
+    sync::Arc,
+};
+use threadpool::ThreadPool;
 
 #[derive(Parser, Debug)]
 #[command(about = "Command Options")]
@@ -59,18 +63,20 @@ fn main() {
     };
     log::info!("Listening for requests on {}", options.bind);
 
-    let state = ProxyState {
+    let state = Arc::new(ProxyState {
         upstream_addresses: options.upstream,
         active_health_check_interval: options.active_health_check_interval,
         active_health_check_path: options.active_health_check_path,
         max_requests_per_minute: options.max_requests_per_minute,
-    };
+    });
+
+    let n_workers = 16;
+    let pool = ThreadPool::new(n_workers);
 
     for stream in listener.incoming() {
         if let Ok(stream) = stream {
-            handle_connection(stream, &state);
-            // let state = state.clone();
-            // thread::spawn(|| handle_connection(stream, state));
+            let state = state.clone();
+            pool.execute(|| handle_connection(stream, state));
         }
     }
 }
@@ -102,11 +108,11 @@ fn send_response(client_conn: &mut TcpStream, response: &http::Response<Vec<u8>>
     }
 }
 
-fn handle_connection(mut client_conn: TcpStream, state: &ProxyState) {
+fn handle_connection(mut client_conn: TcpStream, state: Arc<ProxyState>) {
     let client_ip = client_conn.peer_addr().unwrap().ip().to_string();
     log::info!("Connection received from {client_ip}");
 
-    let mut upstream_conn = match connect_to_upstream(state) {
+    let mut upstream_conn = match connect_to_upstream(state.as_ref()) {
         Ok(stream) => stream,
         Err(_) => {
             let response = response::make_http_error(http::StatusCode::BAD_GATEWAY);
