@@ -1,6 +1,6 @@
 use std::cmp::min;
-use std::io::{Read, Write};
-use std::net::TcpStream;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::TcpStream;
 
 const MAX_HEADERS_SIZE: usize = 8000;
 const MAX_BODY_SIZE: usize = 10000000;
@@ -92,7 +92,7 @@ fn parse_request(buffer: &[u8]) -> Result<Option<(http::Request<Vec<u8>>, usize)
 /// be called in order to read the request body (for a POST request).
 ///
 /// Returns Ok(http::Request) if a valid request is received, or Error if not.
-fn read_headers(stream: &mut TcpStream) -> Result<http::Request<Vec<u8>>, Error> {
+async fn read_headers(stream: &mut TcpStream) -> Result<http::Request<Vec<u8>>, Error> {
     // Try reading the headers from the request. We may not receive all the headers in one shot.
     // e.g. we might receive the first few bytes of a request, and then the rest follows later.
     // Try parsing repeatedly until we read a valid HTTP request
@@ -102,6 +102,7 @@ fn read_headers(stream: &mut TcpStream) -> Result<http::Request<Vec<u8>>, Error>
         // Read bytes from the connection into the buffer, starting at position bytes_read
         let new_bytes = stream
             .read(&mut request_buffer[bytes_read..])
+            .await
             .or_else(|err| Err(Error::ConnectionError(err)))?;
         if new_bytes == 0 {
             // We didn't manage to read a complete request
@@ -126,7 +127,7 @@ fn read_headers(stream: &mut TcpStream) -> Result<http::Request<Vec<u8>>, Error>
 /// This function reads the body for a request from the stream. The client only sends a body if the
 /// Content-Length header is present; this function reads that number of bytes from the stream. It
 /// returns Ok(()) if successful, or Err(Error) if Content-Length bytes couldn't be read.
-fn read_body(
+async fn read_body(
     stream: &mut TcpStream,
     request: &mut http::Request<Vec<u8>>,
     content_length: usize,
@@ -138,6 +139,7 @@ fn read_body(
         let mut buffer = vec![0_u8; min(512, content_length)];
         let bytes_read = stream
             .read(&mut buffer)
+            .await
             .or_else(|err| Err(Error::ConnectionError(err)))?;
 
         // Make sure the client is still sending us bytes.
@@ -163,33 +165,37 @@ fn read_body(
 
 /// This function reads and returns an HTTP request from a stream, returns an Error if the client
 /// closed the connection prematurely or sends an invalid request.
-pub fn read_from_stream(stream: &mut TcpStream) -> Result<http::Request<Vec<u8>>, Error> {
-    let mut request = read_headers(stream)?;
+pub async fn read_from_stream(stream: &mut TcpStream) -> Result<http::Request<Vec<u8>>, Error> {
+    let mut request = read_headers(stream).await?;
     if let Some(content_length) = get_content_length(&request)? {
         if content_length > MAX_BODY_SIZE {
             return Err(Error::RequestBodyTooLarge);
         } else {
-            read_body(stream, &mut request, content_length)?;
+            read_body(stream, &mut request, content_length).await?;
         }
     }
     Ok(request)
 }
 
 /// This function serializes a request to bytes and writes those bytes to the provided stream.
-pub fn write_to_stream(
+pub async fn write_to_stream(
     request: &http::Request<Vec<u8>>,
     stream: &mut TcpStream,
 ) -> Result<(), std::io::Error> {
-    stream.write(&format_request_line(request).into_bytes())?;
-    stream.write(&['\r' as u8, '\n' as u8])?; // \r\n
+    stream
+        .write(&format_request_line(request).into_bytes())
+        .await?;
+    stream.write(&['\r' as u8, '\n' as u8]).await?; // \r\n
     for (header_name, header_value) in request.headers() {
-        stream.write(&format!("{}: ", header_name).as_bytes())?;
-        stream.write(header_value.as_bytes())?;
-        stream.write(&['\r' as u8, '\n' as u8])?; // \r\n
+        stream
+            .write(&format!("{}: ", header_name).as_bytes())
+            .await?;
+        stream.write(header_value.as_bytes()).await?;
+        stream.write(&['\r' as u8, '\n' as u8]).await?; // \r\n
     }
-    stream.write(&['\r' as u8, '\n' as u8])?;
+    stream.write(&['\r' as u8, '\n' as u8]).await?;
     if request.body().len() > 0 {
-        stream.write(request.body())?;
+        stream.write(request.body()).await?;
     }
     Ok(())
 }
